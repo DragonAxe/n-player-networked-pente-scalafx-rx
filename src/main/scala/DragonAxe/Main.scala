@@ -1,5 +1,12 @@
 package DragonAxe
 
+import javafx.event.ActionEvent
+import javafx.event.EventHandler
+import javafx.scene.input.MouseEvent
+
+import DragonAxe.RxIntegration._
+import rx._
+
 import scalafx.application.JFXApp
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.geometry.Insets
@@ -16,8 +23,6 @@ import scalafx.scene.layout.ColumnConstraints
 import scalafx.scene.layout.GridPane
 import scalafx.scene.layout.Priority
 import scalafx.scene.layout.VBox
-
-import DragonAxe.RxIntegration._
 
 /**
   * The main GUI application.
@@ -43,10 +48,27 @@ object Main extends JFXApp {
   val canvasCanvas = new Canvas(300, 300)
 
   // Define application logic
-  val x = nickField.text.rx()
-  x.trigger {
-    connectToServerButton.setDisable(x.now.isEmpty)
+  nickField.text.rx().trigger {
+    connectToServerButton.disable = nickField.text.isEmpty.get()
   }
+
+  val connectionState = Var(false)
+  val isConnected: Rx[Boolean] = Rx(connectionState())
+  isConnected.trigger {
+    val connected = isConnected.now
+    nickField.disable = connected
+    ipField.disable = connected
+    if (connected == true) {
+      connectToServerButton.text = "Disconnect"
+    } else {
+      connectToServerButton.text = "Connect to Server"
+    }
+  }
+
+  connectToServerButton.setOnAction(new EventHandler[ActionEvent] {
+    override def handle(t: ActionEvent): Unit = connectionState.update(!connectionState.now)
+  })
+
 
   // Define the layout
   stage = new PrimaryStage {
@@ -61,7 +83,7 @@ object Main extends JFXApp {
             alignment = Pos.Center
           }
           center = playerList
-          bottom = new VBox {
+          bottom = new VBox() {
             children = List(
               new GridPane {
                 add(new Label("Nick: "), 0, 0)
