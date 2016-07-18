@@ -8,3 +8,5 @@ mainClass in Compile := Some("DragonAxe.Main")
 
 libraryDependencies += "org.scalafx" %% "scalafx" % "8.0.92-R10"
 libraryDependencies += "com.lihaoyi" %% "scalarx" % "0.3.1"
+
+libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.8"
