@@ -2,6 +2,7 @@ package DragonAxe
 
 import javafx.event.ActionEvent
 import javafx.event.EventHandler
+import javafx.stage.WindowEvent
 
 import rx._
 import DragonAxe.RxIntegration._
@@ -28,21 +29,80 @@ object Main extends JFXApp {
   // Important components
   val playerList = new ListView[String]() {
     focusTraversable = false
+    // Update list of players when player joins server
+    playerJoinedMessage.subscribe((name) => {
+      Platform.runLater(items.get().add(name))
+    })
+    // Update list of players when player leaves server
+    playerLeftMessage.subscribe((name) => {
+      Platform.runLater(items.get().remove(name))
+    })
+    disconnectMessage.subscribe((reason) => {
+      Platform.runLater(items.get().retainAll())
+    })
   }
-  val nickField = new TextField()
+  val nickField = new TextField() {
+    connectRequestMessage.subscribe((ip, nick) => {
+      disable = true
+    })
+    disconnectMessage.subscribe((reason) => {
+      disable = false
+    })
+  }
   val ipField = new TextField() {
     text = "localhost"
+    connectRequestMessage.subscribe((ip, nick) => {
+      disable = true
+    })
+    disconnectMessage.subscribe((reason) => {
+      disable = false
+    })
   }
   val connectToServerButton = new Button("Connect to Server") {
-    var isConnected = false
     maxWidth = Double.MaxValue
+    var isConnected = false
+    connectRequestMessage.subscribe((ip, nick) => {
+      isConnected = true
+      text = "Disconnect"
+    })
+    disconnectMessage.subscribe((reason) => {
+      isConnected = false
+      Platform.runLater(text = "Connect to Server")
+    })
+    onAction = new EventHandler[ActionEvent] {
+      override def handle(t: ActionEvent): Unit = {
+        if (!isConnected) {
+          connectRequestMessage.publish(ipField.text.value, nickField.text.value)
+        } else {
+          disconnectRequestMessage.publish()
+          disconnectMessage.publish("Left server")
+        }
+      }
+    }
   }
   val connectionStatusLabel = new Label("Disconnected") {
     maxWidth = Double.MaxValue
     alignment = Pos.CenterRight
+    connectRequestMessage.subscribe((ip, nick) => {
+      text = "Connected"
+    })
+    disconnectMessage.subscribe((reason) => {
+      Platform.runLater(text = reason)
+    })
   }
   val playerReadyCheckbox = new CheckBox() {
     disable = true
+    connectRequestMessage.subscribe((ip, nick) => {
+      disable = false
+    })
+    disconnectMessage.subscribe((reason) => {
+      disable = true
+    })
+    onAction = new EventHandler[ActionEvent] {
+      override def handle(t: ActionEvent): Unit = {
+        pushServerMessage.publish("ready=" + selected.value.toString)
+      }
+    }
   }
   val startServerButton = new Button("Start Local Server") {
     maxWidth = Double.MaxValue
@@ -70,44 +130,7 @@ object Main extends JFXApp {
     isEmpty.trigger(connectToServerButton.setDisable(isEmpty.now))
   }
 
-  // Send connect to server message when button is clicked
-  connectToServerButton.setOnAction(new EventHandler[ActionEvent] {
-    override def handle(t: ActionEvent): Unit = {
-      if (!connectToServerButton.isConnected) {
-        connectRequestMessage.publish(ipField.text.value, nickField.text.value)
-      } else {
-        disconnectRequestMessage.publish(null)
-        disconnectMessage.publish("Left server")
-      }
-      connectToServerButton.isConnected = !connectToServerButton.isConnected
-    }
-  })
-
-  // Set connection status label according to messages
-  connectRequestMessage.subscribe((body) => {
-    connectionStatusLabel.text = "Connected"
-    connectToServerButton.text = "Disconnect"
-    nickField.disable = true
-    ipField.disable = true
-  })
-  disconnectMessage.subscribe((reason) => {
-    Platform.runLater {
-      connectionStatusLabel.text = reason
-      connectToServerButton.text = "Connect to Server"
-      nickField.disable = false
-      ipField.disable = false
-    }
-  })
-
-  // Update list of players when player joins server
-  playerJoinedMessage.subscribe((name) => {
-    Platform.runLater(playerList.getItems.add(name))
-  })
-
-  // Update list of players when player leaves server
-  playerLeftMessage.subscribe((name) => {
-    Platform.runLater(playerList.getItems.remove(name))
-  })
+  Client.init()
 
 
   // Define the layout
@@ -161,5 +184,9 @@ object Main extends JFXApp {
       }
     }
   }
+
+  stage.onCloseRequest.setValue(new EventHandler[WindowEvent] {
+    override def handle(t: WindowEvent): Unit = disconnectRequestMessage.publish()
+  })
 
 }

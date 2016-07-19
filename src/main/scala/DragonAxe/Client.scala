@@ -1,12 +1,15 @@
 package DragonAxe
 
 import java.io.PrintStream
+import java.net.ConnectException
 import java.net.Socket
+import java.net.SocketException
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 
+import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.io.BufferedSource
@@ -24,47 +27,44 @@ object Client {
 
   def init(): Unit = {
     // Start server if connect message received
-    connectRequestMessage.subscribe((body) => {
-      val ip = body._1
-      val nick = body._2
+    connectRequestMessage.subscribe((ip, nick) => {
+      try {
+        val socket = new Socket(ip, 9999)
 
-      val socket = new Socket(ip, 9999)
+        println("Working?")
 
-      val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
-      val listenerFuture = Future[Try[String]] {
-        new ClientListener(socket).call()
-      }(ec)
-      val senderFuture = Future[(String) => Unit](new ClientSender(socket).call())(ec)
+        val sub1 = disconnectRequestMessage.subscribe(() => {
+          socket.close()
+        })
 
-      disconnectRequestMessage.subscribe((reason) => {
+        val out = new PrintStream(socket.getOutputStream())
+        val sub2 = pushServerMessage.subscribe((msg: String) => out.println(msg))
 
-      })
+        new ClientListener(socket).start()
+
+        disconnectMessage.subscribeOnce((reason) => {
+          disconnectRequestMessage.unSubscribe(sub1)
+          pushServerMessage.unSubscribe(sub2)
+        })
+
+        pushServerMessage.publish("Hello, I am " + nick)
+      } catch {
+        case e: ConnectException => disconnectMessage.publish(e.getMessage)
+        case e: Throwable => disconnectMessage.publish("Unknown error!")
+          e.printStackTrace()
+      }
     })
   }
 
 }
 
 /** Returns the function object that can be used to unsubscribe */
-private class ClientSender(socket: Socket) extends Callable[(String) => Unit] {
-
-  override def call(): (String) => Unit = {
-    val out = new PrintStream(socket.getOutputStream())
-    val func = (msg: String) => {
-      out.println(msg)
-    }
-    pushServerMessage.subscribe(func)
-    func
-  }
-
-}
-
-/** Returns the reason for a server disconnect, or possibly and error */
-private class ClientListener(socket: Socket) extends Callable[Try[String]] {
+private class ClientListener(socket: Socket) extends Thread {
 
   val playerJoinedR = "pj=(.*)".r
   val playerLeftR = "pl=(.*)".r
 
-  override def call(): Try[String] = Try {
+  def listenThenReason(): Try[String] = Try {
     val in = new BufferedSource(socket.getInputStream()).getLines()
     try {
       /** Listens on socket input and returns disconnect reason */
@@ -80,8 +80,15 @@ private class ClientListener(socket: Socket) extends Callable[Try[String]] {
       }
       reason
     } catch {
-      case _ => "Lost connection"
+      case e: SocketException => "Left server"
+      case e: NoSuchElementException => "Server was stopped"
     }
   }
 
+  override def run(): Unit = {
+    val reason = listenThenReason()
+    val rStr: String = reason.getOrElse("Er! " + reason.failed.get.getMessage)
+    reason.getOrElse(reason.failed.get.printStackTrace())
+    disconnectMessage.publish(rStr)
+  }
 }

@@ -2,38 +2,80 @@ package DragonAxe
 
 import scala.collection.mutable
 
-/**
-  * See http://jim-mcbeath.blogspot.com/2009/10/simple-publishsubscribe-example-in.html
-  */
-trait Publisher[E] {
+trait Publisher {
+  type S
 
-  type S = (E) => Unit
-  private var subscribers: List[S] = Nil
+  protected var subscribers = mutable.HashMap.empty[Int, S]
+  protected var singleSubscribers: List[S] = Nil
 
-  private object lock
+  protected object lock
 
-  def isSubscribed(subscriber: S): Boolean = {
+  def isSubscribed(subID: Int): Boolean = {
     val subs = lock.synchronized {
       subscribers
     }
-    subs.contains(subscriber)
+    subs.contains(subID)
   }
 
-  def subscribe(subscriber: S): Unit = lock.synchronized {
-    if (!isSubscribed(subscriber)) {
-      subscribers = subscribers :+ subscriber
+  def subscribe(subscriber: S): Int = lock.synchronized {
+    val id = subscribers.size
+    if (!isSubscribed(id)) {
+      subscribers = subscribers.+=((id, subscriber))
     }
+    println("SubID:" + id)
+    id
   }
 
-  def unSubscribe(subscriber: S): Unit = lock.synchronized {
-    subscribers = subscribers.filterNot((sub) => sub.equals(subscriber))
+  def subscribeOnce(subscriber: S): Unit = lock.synchronized {
+    singleSubscribers = singleSubscribers :+ subscriber
   }
+
+  def unSubscribe(subID: Int): Unit = lock.synchronized {
+    subscribers.remove(subID)
+  }
+}
+
+trait Publisher0 extends Publisher {
+
+  type S = () => Unit
+
+  def publish(): Unit = {
+    val subs = lock.synchronized {
+      subscribers
+    }
+    subs.foreach(body => body._2())
+    singleSubscribers = Nil
+  }
+
+}
+
+/**
+  * See http://jim-mcbeath.blogspot.com/2009/10/simple-publishsubscribe-example-in.html
+  */
+trait Publisher1[E] extends Publisher {
+
+  type S = (E) => Unit
 
   def publish(event: E): Unit = {
     val subs = lock.synchronized {
       subscribers
     }
-    subs.foreach((sub) => sub(event))
+    subs.foreach(body => body._2(event))
+    singleSubscribers = Nil
+  }
+
+}
+
+trait Publisher2[E, F] extends Publisher {
+
+  type S = (E, F) => Unit
+
+  def publish(event1: E, event2: F): Unit = {
+    val subs = lock.synchronized {
+      subscribers
+    }
+    subs.foreach(body => body._2(event1, event2))
+    singleSubscribers = Nil
   }
 
 }
@@ -42,28 +84,33 @@ trait Publisher[E] {
   * String1: ip address to connect to
   * String2: nickname to be known as to the server
   */
-object connectRequestMessage extends Publisher[(String, String)]
+object connectRequestMessage extends Publisher2[String, String]
 
 /**
   * String: disconnect reason
   */
-object disconnectMessage extends Publisher[String]
+object disconnectMessage extends Publisher1[String]
 
 /**
   * String: message to send to server
   */
-object pushServerMessage extends Publisher[String]
+object pushServerMessage extends Publisher1[String]
 
 /**
   */
-object disconnectRequestMessage extends Publisher[Null]
-
-/**
-  * String: nickname of the player who joined
-  */
-object playerJoinedMessage extends Publisher[String]
+object disconnectRequestMessage extends Publisher0
 
 /**
   * String: nickname of the player who joined
   */
-object playerLeftMessage extends Publisher[String]
+object playerJoinedMessage extends Publisher1[String]
+
+/**
+  * String: nickname of the player who joined
+  */
+object playerLeftMessage extends Publisher1[String]
+
+/**
+  * String: nickname of the player who joined
+  */
+object connectionFieldsReadyMessage extends Publisher1[Boolean]
