@@ -109,8 +109,3 @@ object playerJoinedMessage extends Publisher1[String]
   * String: nickname of the player who joined
   */
 object playerLeftMessage extends Publisher1[String]
-
-/**
-  * String: nickname of the player who joined
-  */
-object connectionFieldsReadyMessage extends Publisher1[Boolean]
