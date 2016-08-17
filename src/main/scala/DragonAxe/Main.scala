@@ -1,5 +1,7 @@
 package DragonAxe
 
+import javafx.beans.binding.When
+import javafx.beans.value.ObservableBooleanValue
 import javafx.event.ActionEvent
 import javafx.event.EventHandler
 import javafx.stage.WindowEvent
@@ -7,9 +9,10 @@ import javafx.stage.WindowEvent
 import rx._
 import DragonAxe.RxIntegration._
 
+import scalafx.Includes._
 import scalafx.application.JFXApp
 import scalafx.application.JFXApp.PrimaryStage
-import scalafx.application.Platform
+import scalafx.beans.property.BooleanProperty
 import scalafx.geometry.Insets
 import scalafx.geometry.Pos
 import scalafx.scene.Scene
@@ -26,56 +29,28 @@ import scalafx.scene.layout.VBox
   */
 object Main extends JFXApp {
 
+  // Veriables
+  val isConnected = BooleanProperty(false)
+
   // Important components
   val playerList = new ListView[String]() {
     focusTraversable = false
-    // Update list of players when player joins server
-    playerJoinedMessage.subscribe((name) => {
-      Platform.runLater(items.get().add(name))
-    })
-    // Update list of players when player leaves server
-    playerLeftMessage.subscribe((name) => {
-      Platform.runLater(items.get().remove(name))
-    })
-    disconnectMessage.subscribe((reason) => {
-      Platform.runLater(items.get().retainAll())
-    })
+
   }
-  val nickField = new TextField() {
-    connectRequestMessage.subscribe((ip, nick) => {
-      disable = true
-    })
-    disconnectMessage.subscribe((reason) => {
-      disable = false
-    })
-  }
+  val nickField = new TextField() {}
   val ipField = new TextField() {
     text = "localhost"
-    connectRequestMessage.subscribe((ip, nick) => {
-      disable = true
-    })
-    disconnectMessage.subscribe((reason) => {
-      disable = false
-    })
   }
   val connectToServerButton = new Button("Connect to Server") {
     maxWidth = Double.MaxValue
-    var isConnected = false
-    connectRequestMessage.subscribe((ip, nick) => {
-      isConnected = true
-      text = "Disconnect"
-    })
-    disconnectMessage.subscribe((reason) => {
-      isConnected = false
-      Platform.runLater(text = "Connect to Server")
-    })
+    disable <== nickField.text.length.greaterThan(0).not() or ipField.text.length.greaterThan(0).not()
+    text <== when(isConnected) choose "Disconnected" otherwise "Connect to Server"
     onAction = new EventHandler[ActionEvent] {
       override def handle(t: ActionEvent): Unit = {
-        if (!isConnected) {
-          connectRequestMessage.publish(ipField.text.value, nickField.text.value)
+        if (isConnected.value) {
+          isConnected.set(false)
         } else {
-          disconnectRequestMessage.publish()
-          disconnectMessage.publish("Left server")
+          isConnected.set(true)
         }
       }
     }
@@ -83,24 +58,12 @@ object Main extends JFXApp {
   val connectionStatusLabel = new Label("Disconnected") {
     maxWidth = Double.MaxValue
     alignment = Pos.CenterRight
-    connectRequestMessage.subscribe((ip, nick) => {
-      text = "Connected"
-    })
-    disconnectMessage.subscribe((reason) => {
-      Platform.runLater(text = reason)
-    })
   }
   val playerReadyCheckbox = new CheckBox() {
-    disable = true
-    connectRequestMessage.subscribe((ip, nick) => {
-      disable = false
-    })
-    disconnectMessage.subscribe((reason) => {
-      disable = true
-    })
+    disable <== isConnected.not()
     onAction = new EventHandler[ActionEvent] {
       override def handle(t: ActionEvent): Unit = {
-        pushServerMessage.publish("ready=" + selected.value.toString)
+
       }
     }
   }
@@ -117,20 +80,6 @@ object Main extends JFXApp {
     alignment = Pos.CenterRight
   }
   val canvasCanvas = new Canvas(300, 300)
-
-
-  //// Define application logic //
-  // Disable connect to server button if nick or ip inputField are empty
-  {
-    val textField1 = nickField.text.rx()
-    val textField2 = ipField.text.rx()
-    val isEmpty = Rx {
-      textField1().isEmpty || textField2().isEmpty
-    }
-    isEmpty.trigger(connectToServerButton.setDisable(isEmpty.now))
-  }
-
-  Client.init()
 
 
   // Define the layout
@@ -186,7 +135,9 @@ object Main extends JFXApp {
   }
 
   stage.onCloseRequest.setValue(new EventHandler[WindowEvent] {
-    override def handle(t: WindowEvent): Unit = disconnectRequestMessage.publish()
+    override def handle(t: WindowEvent): Unit = {
+      //      disconnectRequestMessage.publish()
+    }
   })
 
 }

@@ -27,35 +27,19 @@ object Client {
 
   def init(): Unit = {
     // Start server if connect message received
-    connectRequestMessage.subscribe((ip, nick) => {
-      try {
-        val socket = new Socket(ip, 9999)
 
-        println("Working?")
+    val socket = new Socket("localhost", 9999)
 
-        val sub1 = disconnectRequestMessage.subscribe(() => {
-          socket.close()
-        })
+    println("Working?")
 
-        val out = new PrintStream(socket.getOutputStream())
-        val sub2 = pushServerMessage.subscribe((msg: String) => out.println(msg))
 
-        new ClientListener(socket).start()
+    val out = new PrintStream(socket.getOutputStream())
 
-        disconnectMessage.subscribeOnce((reason) => {
-          disconnectRequestMessage.unSubscribe(sub1)
-          pushServerMessage.unSubscribe(sub2)
-        })
 
-        pushServerMessage.publish("Hello, I am " + nick)
-      } catch {
-        case e: ConnectException => disconnectMessage.publish(e.getMessage)
-        case e: Throwable => disconnectMessage.publish("Unknown error!")
-          e.printStackTrace()
-      }
-    })
+    new ClientListener(socket).start()
+
+
   }
-
 }
 
 /** Returns the function object that can be used to unsubscribe */
@@ -71,10 +55,10 @@ private class ClientListener(socket: Socket) extends Thread {
       def reason: String = in.next() match {
         case "shutdown" => "Server stopped"
         case "kick" => "Kicked"
-        case playerJoinedR(player) => playerJoinedMessage.publish(player)
-          reason
-        case playerLeftR(player) => playerLeftMessage.publish(player)
-          reason
+        //        case playerJoinedR(player) => playerJoinedMessage.publish(player)
+        //          reason
+        //        case playerLeftR(player) => playerLeftMessage.publish(player)
+        //          reason
         case s: String => println("Unknown message: " + s)
           reason
       }
@@ -89,6 +73,6 @@ private class ClientListener(socket: Socket) extends Thread {
     val reason = listenThenReason()
     val rStr: String = reason.getOrElse("Er! " + reason.failed.get.getMessage)
     reason.getOrElse(reason.failed.get.printStackTrace())
-    disconnectMessage.publish(rStr)
+    //    disconnectMessage.publish(rStr)
   }
 }
